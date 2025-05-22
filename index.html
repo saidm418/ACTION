@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تحليل إحصائي بسيط مع Web Worker</title>
+<style>
+  body {
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    direction: rtl;
+    max-width: 700px;
+    margin: auto;
+    padding: 1rem;
+  }
+  textarea {
+    width: 100%;
+    height: 100px;
+    font-size: 1rem;
+    margin-bottom: 0.5rem;
+  }
+  label {
+    display: block;
+    margin-bottom: 0.3rem;
+    font-weight: bold;
+  }
+  fieldset {
+    margin-bottom: 1rem;
+  }
+  button {
+    font-size: 1.1rem;
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+  }
+  .result {
+    background: #f3f3f3;
+    border: 1px solid #ddd;
+    padding: 1rem;
+    margin-top: 1rem;
+    white-space: pre-line;
+  }
+  .explanation {
+    font-size: 0.9rem;
+    color: #555;
+    margin-bottom: 1rem;
+  }
+  #loadingMessage {
+    display:none; 
+    text-align:center; 
+    margin-top:10px; 
+    font-weight:bold;
+  }
+</style>
+</head>
+<body>
+
+<h2>تطبيق تحليل إحصائي بسيط للمقارنة بين مجموعتين</h2>
+
+<form id="analysisForm">
+
+  <fieldset>
+    <legend>اختر نوع الدراسة</legend>
+    <div>
+      <input type="radio" id="independent" name="studyType" value="independent" checked />
+      <label for="independent">مجموعتان مستقلتان (مجموعتان مختلفتان من التلاميذ)</label>
+    </div>
+    <div>
+      <input type="radio" id="paired" name="studyType" value="paired" />
+      <label for="paired">قياس قبل وبعد لنفس المجموعة (نفس التلاميذ)</label>
+    </div>
+    <p class="explanation">
+      <strong>مجموعتان مستقلتان:</strong> تستخدم عندما تريد مقارنة معدلات بين مجموعتين مختلفتين من التلاميذ.<br>
+      <strong>قياس قبل وبعد:</strong> تستخدم عندما تقارن معدلات نفس التلاميذ قبل وبعد التدخل.
+    </p>
+  </fieldset>
+
+  <fieldset>
+    <label for="group1">ادخل معدلات المجموعة الأولى (انسخ ولصق، الأرقام مفصولة بسطر جديد أو بفاصلة)</label>
+    <textarea id="group1" placeholder="مثال: 12.5
+13
+14.7
+10
+15"></textarea>
+  </fieldset>
+
+  <fieldset>
+    <label for="group2">ادخل معدلات المجموعة الثانية (انسخ ولصق، الأرقام مفصولة بسطر جديد أو بفاصلة)</label>
+    <textarea id="group2" placeholder="مثال: 10
+11.5
+14
+13.2
+9.8"></textarea>
+  </fieldset>
+
+  <button type="submit">تحليل البيانات</button>
+</form>
+
+<div id="loadingMessage">جارٍ التحليل... الرجاء الانتظار.</div>
+<div id="output" class="result"></div>
+
+<script>
+  if(window.Worker){
+    const worker = new Worker('worker.js');
+
+    const loadingMessage = document.getElementById("loadingMessage");
+    const output = document.getElementById("output");
+    const form = document.getElementById("analysisForm");
+
+    form.addEventListener("submit", function(e){
+      e.preventDefault();
+      output.textContent = "";
+      
+      let studyType = document.querySelector('input[name="studyType"]:checked').value;
+      let raw1 = document.getElementById("group1").value;
+      let raw2 = document.getElementById("group2").value;
+
+      // تحليل نص الادخال داخل الصفحة (تأكد من القيم صحيحة) قبل الإرسال للـ worker
+      function parseData(text) {
+        return text
+          .split(/[\n,؛،]/)
+          .map(s => parseFloat(s.trim()))
+          .filter(n => !isNaN(n));
+      }
+
+      let group1 = parseData(raw1);
+      let group2 = parseData(raw2);
+
+      if(group1.length < 3 || group2.length < 3) {
+        output.textContent = "الرجاء إدخال على الأقل 3 معدلات صحيحة في كل مجموعة.";
+        return;
+      }
+      if(studyType === "paired" && group1.length !== group2.length) {
+        output.textContent = "في حالة قياس قبل وبعد، يجب أن يكون عدد المعدلات في المجموعتين متساويًا.";
+        return;
+      }
+
+      loadingMessage.style.display = "block";
+      output.style.display = "none";
+
+      // إرسال البيانات للـ Web Worker
+      worker.postMessage({group1, group2, studyType});
+    });
+
+    worker.onmessage = function(e){
+      loadingMessage.style.display = "none";
+      output.style.display = "block";
+      output.textContent = e.data.resultText;
+    };
+
+    worker.onerror = function(e){
+      loadingMessage.style.display = "none";
+      output.style.display = "block";
+      output.textContent = "حدث خطأ في التحليل داخل Web Worker.";
+      console.error(e);
+    };
+  } else {
+    alert("متصفحك لا يدعم Web Workers. يُفضل تحديث المتصفح لاستخدام التطبيق.");
+  }
+</script>
+
+</body>
+</html>
